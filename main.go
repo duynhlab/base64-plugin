@@ -1,95 +1,141 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
+
+	"github.com/invopop/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
-// Execute a tool call. This is the primary entry point for tool execution in plugins.
-//
-// The plugin receives a tool call request with the tool name and arguments, along with request context information. The plugin should execute the requested tool and return the result with content blocks and optional structured output.
-// It takes CallToolRequest as input ()
-// And returns CallToolResult ()
-func CallTool(input CallToolRequest) (*CallToolResult, error) {
-	return nil, fmt.Errorf("CallTool not implemented.")
+const (
+	toolEncode = "base64_encode"
+	toolDecode = "base64_decode"
+)
+
+func ptrString(s string) *string { return &s }
+func ptrBool(b bool) *bool       { return &b }
+
+// ListTools advertises the two base64 tools.
+func ListTools(_ ListToolsRequest) (*ListToolsResult, error) {
+	inputProp := orderedmap.New[string, *jsonschema.Schema]()
+	inputProp.Set("input", &jsonschema.Schema{
+		Type:        "string",
+		Description: "The string to encode/decode.",
+	})
+	inputProp.Set("url_safe", &jsonschema.Schema{
+		Type:        "boolean",
+		Description: "Use URL-safe base64 alphabet (RFC 4648 §5). Default: false.",
+	})
+
+	schema := jsonschema.Schema{
+		Type:       "object",
+		Properties: inputProp,
+		Required:   []string{"input"},
+	}
+
+	readOnly := true
+	idempotent := true
+	annotations := &ToolAnnotations{
+		ReadOnlyHint:   &readOnly,
+		IdempotentHint: &idempotent,
+	}
+
+	return &ListToolsResult{
+		Tools: []Tool{
+			{
+				Name:        toolEncode,
+				Description: ptrString("Encode a UTF-8 string to base64."),
+				InputSchema: schema,
+				Annotations: annotations,
+			},
+			{
+				Name:        toolDecode,
+				Description: ptrString("Decode a base64-encoded string to UTF-8."),
+				InputSchema: schema,
+				Annotations: annotations,
+			},
+		},
+	}, nil
 }
 
-// Provide completion suggestions for a partially-typed input.
-//
-// This function is called when the user requests autocompletion. The plugin should analyze the partial input and return matching completion suggestions based on the reference (prompt or resource) and argument context.
-// It takes CompleteRequest as input ()
-// And returns CompleteResult ()
-func Complete(input CompleteRequest) (*CompleteResult, error) {
+// CallTool executes one of the base64 tools.
+func CallTool(input CallToolRequest) (*CallToolResult, error) {
+	raw, ok := input.Request.Arguments["input"].(string)
+	if !ok {
+		return errResult(`missing or non-string "input" argument`), nil
+	}
+	urlSafe, _ := input.Request.Arguments["url_safe"].(bool)
+
+	switch input.Request.Name {
+	case toolEncode:
+		enc := pickEncoding(urlSafe)
+		return textResult(enc.EncodeToString([]byte(raw))), nil
+	case toolDecode:
+		enc := pickEncoding(urlSafe)
+		decoded, err := enc.DecodeString(raw)
+		if err != nil {
+			return errResult(fmt.Sprintf("base64 decode failed: %v", err)), nil
+		}
+		return textResult(string(decoded)), nil
+	default:
+		return errResult(fmt.Sprintf("unknown tool: %s", input.Request.Name)), nil
+	}
+}
+
+func pickEncoding(urlSafe bool) *base64.Encoding {
+	if urlSafe {
+		return base64.URLEncoding
+	}
+	return base64.StdEncoding
+}
+
+func textResult(text string) *CallToolResult {
+	return &CallToolResult{
+		Content: []ContentBlock{
+			{Text: &TextContent{Text: text}},
+		},
+	}
+}
+
+func errResult(msg string) *CallToolResult {
+	return &CallToolResult{
+		IsError: ptrBool(true),
+		Content: []ContentBlock{
+			{Text: &TextContent{Text: msg}},
+		},
+	}
+}
+
+// ---- unused MCP handlers: return empty results so the host doesn't error ----
+
+func Complete(_ CompleteRequest) (*CompleteResult, error) {
 	return &CompleteResult{}, nil
 }
 
-// Retrieve a specific prompt by name.
-//
-// This function is called when the user requests a specific prompt. The plugin should return the prompt details including messages and optional description.
-// It takes GetPromptRequest as input ()
-// And returns GetPromptResult ()
-func GetPrompt(input GetPromptRequest) (*GetPromptResult, error) {
-	// TODO: fill out your implementation here
-	return nil, fmt.Errorf("GetPrompt not implemented.")
+func GetPrompt(_ GetPromptRequest) (*GetPromptResult, error) {
+	return &GetPromptResult{}, nil
 }
 
-// List all available prompts.
-//
-// This function should return a list of prompts that the plugin provides. Each prompt should include its name and a brief description of what it does. Supports pagination via cursor.
-// It takes ListPromptsRequest as input ()
-// And returns ListPromptsResult ()
-func ListPrompts(input ListPromptsRequest) (*ListPromptsResult, error) {
-	// TODO: fill out your implementation here
+func ListPrompts(_ ListPromptsRequest) (*ListPromptsResult, error) {
 	return &ListPromptsResult{}, nil
 }
 
-// List all available resource templates.
-//
-// This function should return a list of resource templates that the plugin provides. Templates are URI patterns that can match multiple resources. Supports pagination via cursor.
-// It takes ListResourceTemplatesRequest as input ()
-// And returns ListResourceTemplatesResult ()
-func ListResourceTemplates(input ListResourceTemplatesRequest) (*ListResourceTemplatesResult, error) {
-	// TODO: fill out your implementation here
+func ListResourceTemplates(_ ListResourceTemplatesRequest) (*ListResourceTemplatesResult, error) {
 	return &ListResourceTemplatesResult{}, nil
 }
 
-// List all available resources.
-//
-// This function should return a list of resources that the plugin provides. Resources are URI-based references to files, data, or services. Supports pagination via cursor.
-// It takes ListResourcesRequest as input ()
-// And returns ListResourcesResult ()
-func ListResources(input ListResourcesRequest) (*ListResourcesResult, error) {
-	// TODO: fill out your implementation here
+func ListResources(_ ListResourcesRequest) (*ListResourcesResult, error) {
 	return &ListResourcesResult{}, nil
 }
 
-// List all available tools.
-//
-// This function should return a list of all tools that the plugin provides. Each tool should include its name, description, and input schema. Supports pagination via cursor.
-// It takes ListToolsRequest as input ()
-// And returns ListToolsResult ()
-func ListTools(input ListToolsRequest) (*ListToolsResult, error) {
-	// TODO: fill out your implementation here
-	return &ListToolsResult{}, nil
+func ReadResource(_ ReadResourceRequest) (*ReadResourceResult, error) {
+	return &ReadResourceResult{}, nil
 }
 
-// Notification that the list of roots has changed.
-//
-// This is an optional notification handler. If implemented, the plugin will be notified whenever the roots list changes on the client side. This allows plugins to react to changes in the file system roots or other root resources.
-// It takes PluginNotificationContext as input ()
-func OnRootsListChanged(input PluginNotificationContext) error {
-	// TODO: fill out your implementation here
+func OnRootsListChanged(_ PluginNotificationContext) error {
 	return nil
 }
 
-// Read the contents of a resource by its URI.
-//
-// This function is called when the user wants to read the contents of a specific resource. The plugin should retrieve and return the resource data with appropriate MIME type information.
-// It takes ReadResourceRequest as input ()
-// And returns ReadResourceResult ()
-func ReadResource(input ReadResourceRequest) (*ReadResourceResult, error) {
-	// TODO: fill out your implementation here
-	return nil, fmt.Errorf("ReadResource not implemented.")
-}
-
-// Note: leave this in place, as the Go compiler will find the `export` function as the entrypoint.
+// TinyGo entry point. Real entry points are the //export functions in exports.go.
 func main() {}
