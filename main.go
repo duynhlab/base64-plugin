@@ -1,9 +1,9 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 
+	"github.com/duynhlab/base64-plugin/internal/base64ops"
 	"github.com/invopop/jsonschema"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
@@ -13,98 +13,142 @@ const (
 	toolDecode = "base64_decode"
 )
 
-func ptrString(s string) *string { return &s }
-func ptrBool(b bool) *bool       { return &b }
+func ptr[T any](v T) *T { return &v }
 
 // ListTools advertises the two base64 tools.
 func ListTools(_ ListToolsRequest) (*ListToolsResult, error) {
-	inputProp := orderedmap.New[string, *jsonschema.Schema]()
-	inputProp.Set("input", &jsonschema.Schema{
-		Type:        "string",
-		Description: "The string to encode/decode.",
-	})
-	inputProp.Set("url_safe", &jsonschema.Schema{
-		Type:        "boolean",
-		Description: "Use URL-safe base64 alphabet (RFC 4648 §5). Default: false.",
-	})
-
-	schema := jsonschema.Schema{
-		Type:       "object",
-		Properties: inputProp,
-		Required:   []string{"input"},
-	}
-
-	readOnly := true
-	idempotent := true
-	annotations := &ToolAnnotations{
-		ReadOnlyHint:   &readOnly,
-		IdempotentHint: &idempotent,
+	annotations := func() *ToolAnnotations {
+		return &ToolAnnotations{
+			ReadOnlyHint:   ptr(true),
+			IdempotentHint: ptr(true),
+		}
 	}
 
 	return &ListToolsResult{
 		Tools: []Tool{
 			{
 				Name:        toolEncode,
-				Description: ptrString("Encode a UTF-8 string to base64."),
-				InputSchema: schema,
-				Annotations: annotations,
+				Description: ptr("Encode a UTF-8 string to base64."),
+				InputSchema: encodeInputSchema(),
+				Annotations: annotations(),
 			},
 			{
 				Name:        toolDecode,
-				Description: ptrString("Decode a base64-encoded string to UTF-8."),
-				InputSchema: schema,
-				Annotations: annotations,
+				Description: ptr("Decode a base64-encoded string to UTF-8. Accepts standard or URL-safe alphabets, padded or unpadded, and ignores ASCII whitespace."),
+				InputSchema: decodeInputSchema(),
+				Annotations: annotations(),
 			},
 		},
 	}, nil
 }
 
-// CallTool executes one of the base64 tools.
-func CallTool(input CallToolRequest) (*CallToolResult, error) {
-	raw, ok := input.Request.Arguments["input"].(string)
-	if !ok {
-		return errResult(`missing or non-string "input" argument`), nil
-	}
-	urlSafe, _ := input.Request.Arguments["url_safe"].(bool)
-
-	switch input.Request.Name {
-	case toolEncode:
-		enc := pickEncoding(urlSafe)
-		return textResult(enc.EncodeToString([]byte(raw))), nil
-	case toolDecode:
-		enc := pickEncoding(urlSafe)
-		decoded, err := enc.DecodeString(raw)
-		if err != nil {
-			return errResult(fmt.Sprintf("base64 decode failed: %v", err)), nil
-		}
-		return textResult(string(decoded)), nil
-	default:
-		return errResult(fmt.Sprintf("unknown tool: %s", input.Request.Name)), nil
+func encodeInputSchema() jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("input", &jsonschema.Schema{
+		Type:        "string",
+		Description: "The UTF-8 string to encode.",
+	})
+	props.Set("url_safe", &jsonschema.Schema{
+		Type:        "boolean",
+		Description: "If true, use the RFC 4648 §5 URL-safe alphabet (- and _ instead of + and /). Default: false.",
+	})
+	return jsonschema.Schema{
+		Type:       "object",
+		Properties: props,
+		Required:   []string{"input"},
 	}
 }
 
-func pickEncoding(urlSafe bool) *base64.Encoding {
-	if urlSafe {
-		return base64.URLEncoding
+func decodeInputSchema() jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("input", &jsonschema.Schema{
+		Type:        "string",
+		Description: "The base64 string to decode. Alphabet (standard or URL-safe) and padding are auto-detected.",
+	})
+	return jsonschema.Schema{
+		Type:       "object",
+		Properties: props,
+		Required:   []string{"input"},
 	}
-	return base64.StdEncoding
+}
+
+// CallTool executes one of the base64 tools.
+func CallTool(input CallToolRequest) (*CallToolResult, error) {
+	args := input.Request.Arguments
+
+	switch input.Request.Name {
+	case toolEncode:
+		raw, errResp := requireString(args, "input")
+		if errResp != nil {
+			return errResp, nil
+		}
+		urlSafe, errResp := optionalBool(args, "url_safe")
+		if errResp != nil {
+			return errResp, nil
+		}
+		return textResult(base64ops.Encode(raw, urlSafe)), nil
+
+	case toolDecode:
+		raw, errResp := requireString(args, "input")
+		if errResp != nil {
+			return errResp, nil
+		}
+		decoded, err := base64ops.Decode(raw)
+		if err != nil {
+			return errResultf("decode failed: %v", err), nil
+		}
+		return textResult(string(decoded)), nil
+
+	default:
+		return errResultf("unknown tool: %q", input.Request.Name), nil
+	}
+}
+
+// requireString fetches a required string argument or returns a typed
+// error result describing exactly what was wrong (missing vs wrong type).
+func requireString(args map[string]any, name string) (string, *CallToolResult) {
+	v, present := args[name]
+	if !present {
+		return "", errResultf("required argument %q is missing", name)
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", errResultf("argument %q must be a string, got %T", name, v)
+	}
+	return s, nil
+}
+
+// optionalBool fetches an optional boolean argument. Missing is fine
+// (returns false); wrong type is a hard error rather than a silent
+// coercion to false, because silently encoding with the wrong alphabet
+// is a worse failure mode than rejecting the call.
+func optionalBool(args map[string]any, name string) (bool, *CallToolResult) {
+	v, present := args[name]
+	if !present {
+		return false, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, errResultf("argument %q must be a boolean, got %T", name, v)
+	}
+	return b, nil
 }
 
 func textResult(text string) *CallToolResult {
 	return &CallToolResult{
-		Content: []ContentBlock{
-			{Text: &TextContent{Text: text}},
-		},
+		Content: []ContentBlock{{Text: &TextContent{Text: text}}},
 	}
 }
 
 func errResult(msg string) *CallToolResult {
 	return &CallToolResult{
-		IsError: ptrBool(true),
-		Content: []ContentBlock{
-			{Text: &TextContent{Text: msg}},
-		},
+		IsError: ptr(true),
+		Content: []ContentBlock{{Text: &TextContent{Text: msg}}},
 	}
+}
+
+func errResultf(format string, args ...any) *CallToolResult {
+	return errResult(fmt.Sprintf(format, args...))
 }
 
 // ---- unused MCP handlers: return empty results so the host doesn't error ----
