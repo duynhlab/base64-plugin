@@ -81,7 +81,7 @@ Produces `plugin.wasm` (~425KB). The harness exercises encode/decode (std + URL-
 **Build OCI image with podman:**
 
 ```sh
-podman build -t base64-mcp:latest .
+podman build -t base64-plugin:latest .
 ```
 
 The Dockerfile is `FROM scratch` + `COPY plugin.wasm` — it does not compile; `plugin.wasm` must exist first.
@@ -93,7 +93,7 @@ The Dockerfile is `FROM scratch` + `COPY plugin.wasm` — it does not compile; `
 
 ## Gotchas
 
-1. **`go.mod` module path is `github.com/hyper-mcp-rs/hyper-mcp/templates/plugins/go`** — the template default, not updated for this repo. Nothing imports this module so it's harmless; leave it unless renaming is explicitly requested.
+1. **`go.mod` module path is `github.com/duynhlab/base64-plugin`**. Nothing inside this repo imports the module (the plugin is built as a wasip1 binary with `//export` entry points), so the path is essentially cosmetic — keep it in sync with the GitHub repo name on any future rename.
 2. **gopls reports `_CallTool`, `_ListTools`, etc. as unused** — false positive. They are kept alive by `//export` directives that gopls (running with host Go) doesn't see. Do not delete.
 3. **`CallToolResult.Content` is `[]ContentBlock`** (a tagged-union struct), *not* `[]json.RawMessage`. Build a text result with `ContentBlock{Text: &TextContent{Text: "..."}}`. Earlier versions of the upstream README show raw JSON — that's outdated for the current `types.go`.
 4. `Tool.InputSchema` is `jsonschema.Schema` from `github.com/invopop/jsonschema`. Its `Properties` field is `*orderedmap.OrderedMap[string, *jsonschema.Schema]` — build it with `orderedmap.New[string, *jsonschema.Schema]()` and `.Set(...)`, not a `map[string]any` literal.
@@ -126,7 +126,7 @@ From the podman-built image (after `podman push` to a registry):
 ```json
 {
   "plugins": {
-    "base64": { "url": "oci://your-registry/base64-mcp:latest" }
+    "base64": { "url": "oci://ghcr.io/duynhlab/base64-plugin:latest" }
   }
 }
 ```

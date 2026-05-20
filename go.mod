@@ -1,4 +1,4 @@
-module github.com/hyper-mcp-rs/hyper-mcp/templates/plugins/go
+module github.com/duynhlab/base64-plugin
 
 go 1.25
 
