@@ -108,29 +108,35 @@ func errResult(msg string) *CallToolResult {
 }
 
 // ---- unused MCP handlers: return empty results so the host doesn't error ----
+//
+// Every list-shaped slice must be explicitly initialised to a non-nil empty
+// slice. Go marshals a nil slice as JSON `null`, which strict MCP clients
+// (e.g. Crush) reject with "invalid type: null, expected a sequence".
 
 func Complete(_ CompleteRequest) (*CompleteResult, error) {
-	return &CompleteResult{}, nil
+	return &CompleteResult{
+		Completion: CompleteResultCompletion{Values: []string{}},
+	}, nil
 }
 
 func GetPrompt(_ GetPromptRequest) (*GetPromptResult, error) {
-	return &GetPromptResult{}, nil
+	return &GetPromptResult{Messages: []PromptMessage{}}, nil
 }
 
 func ListPrompts(_ ListPromptsRequest) (*ListPromptsResult, error) {
-	return &ListPromptsResult{}, nil
+	return &ListPromptsResult{Prompts: []Prompt{}}, nil
 }
 
 func ListResourceTemplates(_ ListResourceTemplatesRequest) (*ListResourceTemplatesResult, error) {
-	return &ListResourceTemplatesResult{}, nil
+	return &ListResourceTemplatesResult{ResourceTemplates: []ResourceTemplate{}}, nil
 }
 
 func ListResources(_ ListResourcesRequest) (*ListResourcesResult, error) {
-	return &ListResourcesResult{}, nil
+	return &ListResourcesResult{Resources: []Resource{}}, nil
 }
 
 func ReadResource(_ ReadResourceRequest) (*ReadResourceResult, error) {
-	return &ReadResourceResult{}, nil
+	return &ReadResourceResult{Contents: []ResourceContents{}}, nil
 }
 
 func OnRootsListChanged(_ PluginNotificationContext) error {
