@@ -1,474 +1,129 @@
-# Go Plugin Template
+# base64-plugin
 
-A WebAssembly plugin template for building MCP (Model Context Protocol) plugins in Go using the hyper-mcp framework.
+A [hyper-mcp](https://github.com/hyper-mcp-rs/hyper-mcp) WebAssembly plugin that exposes **base64 encode/decode** as MCP tools, backed by Go's stdlib `encoding/base64`.
 
-## Overview
+Built with **TinyGo 0.40.1** targeting `wasip1`, distributed as an OCI artifact on `ghcr.io`.
 
-This template provides a starter project for creating MCP plugins that run as WebAssembly modules. It includes all necessary dependencies and boilerplate code to implement MCP protocol handlers.
+## Tools
 
-## Project Structure
+| Name | Description |
+|---|---|
+| `base64_encode` | Encode a UTF-8 string to base64. |
+| `base64_decode` | Decode a base64-encoded string to UTF-8. |
 
-```
-.
-├── .github/workflows       # Sample workflows for Github Actions
-|-- main.go                 # Plugin handler implementations
-├── exports.go              # WASM export wrappers for handlers
-├── imports.go              # Host function calls
-├── types.go                # MCP protocol types
-├── go.mod                  # Go module definition
-├── go.sum                  # Go module checksums
-├── Dockerfile              # Simple build for deploying a WASM
-└── .gitignore              # Git ignore rules
-```
+### Arguments (both tools)
 
-## Getting Started
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `input` | string | yes | — | The string to encode/decode. |
+| `url_safe` | boolean | no | `false` | When `true`, uses the RFC 4648 §5 URL-safe alphabet (`-`/`_` instead of `+`/`/`). |
 
-### Prerequisites
+Errors (invalid base64, missing argument, unknown tool) are returned as a `CallToolResult` with `isError: true` and a text content block describing the failure — the plugin never panics, because TinyGo is built with `-panic=trap` and a panic would become an opaque WASM trap.
 
-- Go 1.22 or later
-- TinyGo 0.40 or later
-- Docker (for building WASM)
-- `clang` and `lld` (for WASM compilation)
+## Install in hyper-mcp
 
-### Development
-
-1. **Clone or use this template** to start your plugin project
-
-2. **Implement plugin handlers** in `main.go`:
-
-Plugin handlers must be implemented without the use of goroutines *unless* you modify the Dockerfile build to remove `-scheduler=none` from the tinygo build flags. Note that this is not recommended, as hyper-mcp will normally handle concurrent executions for you.
-
-   > **Note:** You only need to implement the handlers relevant to your plugin. For example, if your plugin only provides tools, implement only `ListTools()` and `CallTool()`. All other handlers have default implementations that work out of the box.
-
-   - `ListTools()` - Describe available tools
-   - `CallTool()` - Execute a tool
-   - `ListResources()` - List available resources
-   - `ReadResource()` - Read resource contents
-   - `ListPrompts()` - List available prompts
-   - `GetPrompt()` - Get prompt details
-   - `Complete()` - Provide auto-completion suggestions
-   - `ListResourceTemplates()` - List resource templates
-   - `OnRootsListChanged()` - Handle root changes
-
-3. **Build locally** (requires Docker for WASM target):
-   ```sh
-    GOOS=wasip1 GOARCH=wasm tinygo build -no-debug -panic=trap -scheduler=none -o plugin.wasm
-    docker build -t your-registry/your-plugin-name .
-   ```
-
-### Dependencies
-
-The template uses:
-
-- **extism/go-pdk** - Plugin Development Kit for Extism
-- Standard Go libraries for JSON serialization and time handling
-
-## Plugin Handler Functions
-
-Your plugin can implement any combination of the following handlers. **Only implement the handlers your plugin needs** - the template provides sensible defaults for everything else:
-
-| Handler | Purpose | Required For |
-|---------|---------|--------------|
-| `ListTools()` | Declare available tools | Tool-providing plugins |
-| `CallTool()` | Execute a tool | Tool-providing plugins |
-| `ListResources()` | Declare available resources | Resource-providing plugins |
-| `ListResourceTemplates()` | Declare resource templates | Dynamic resource plugins |
-| `ReadResource()` | Read resource contents | Resource-providing plugins |
-| `ListPrompts()` | Declare available prompts | Prompt-providing plugins |
-| `GetPrompt()` | Retrieve a specific prompt | Prompt-providing plugins |
-| `Complete()` | Provide auto-completions | Plugins supporting completions |
-| `OnRootsListChanged()` | Handle root changes | Plugins reacting to root changes |
-
-**Example: Tools-only plugin**
-
-If your plugin only provides tools, you only need to implement:
-
-```go
-func ListTools(input ListToolsRequest) (*ListToolsResult, error) {
-    return &ListToolsResult{
-        Tools: []Tool{
-            {
-                Name: "greet",
-                Description: ptrString("Greet a person"),
-                InputSchema: ToolSchema{
-                    Type: "object",
-                    Properties: map[string]interface{}{
-                        "name": map[string]interface{}{
-                            "type": "string",
-                            "description": "The person's name",
-                        },
-                    },
-                    Required: []string{"name"},
-                },
-            },
-        },
-    }, nil
-}
-
-func CallTool(input CallToolRequest) (*CallToolResult, error) {
-    switch input.Request.Name {
-    case "greet":
-        name, ok := input.Request.Arguments["name"].(string)
-        if !ok {
-            return &CallToolResult{
-                Content: []json.RawMessage{
-                    []byte(`{"type":"text","text":"name argument required"}`),
-                },
-            }, nil
-        }
-        return &CallToolResult{
-            Content: []json.RawMessage{
-                []byte(fmt.Sprintf(`{"type":"text","text":"Hello, %s!"}`, name)),
-            },
-        }, nil
-    default:
-        return &CallToolResult{
-            Content: []json.RawMessage{
-                []byte(fmt.Sprintf(`{"type":"text","text":"Unknown tool: %s"}`, input.Request.Name)),
-            },
-        }, nil
-    }
-}
-```
-
-All other handlers will use their default implementations.
-
-## Host Functions
-
-Your plugin can call these host functions to interact with the client and MCP server. Available through direct function calls in `imports.go`:
-
-```go
-// Example usage
-result, err := CreateElicitation(ElicitRequestParamWithTimeout{...})
-```
-
-### User Interaction
-
-**`CreateElicitation(input ElicitRequestParamWithTimeout) (*ElicitResult, error)`**
-
-Request user input through the client's elicitation interface. Use this when your plugin needs user guidance, decisions, or confirmations during execution.
-
-```go
-result, err := CreateElicitation(ElicitRequestParamWithTimeout{
-    Message: "Please provide your name",
-    RequestedSchema: Schema{
-        Type: "object",
-        Properties: map[string]json.RawMessage{
-            "name": json.RawMessage(`{"type":"string"}`),
-        },
-    },
-    Timeout: ptrInt64(30000), // 30 second timeout
-})
-```
-
-### Message Generation
-
-**`CreateMessage(input CreateMessageRequestParam) (*CreateMessageResult, error)`**
-
-Request message creation through the client's sampling interface. Use this when your plugin needs intelligent text generation or analysis with AI assistance.
-
-```go
-result, err := CreateMessage(CreateMessageRequestParam{
-    MaxTokens: 1024,
-    Messages: []json.RawMessage{
-        // conversation history
-    },
-    SystemPrompt: ptrString("You are a helpful assistant"),
-})
-```
-
-### Resource Discovery
-
-**`ListRoots() (*ListRootsResult, error)`**
-
-List the client's root directories or resources. Use this to discover what root resources (typically file system roots) are available and understand the scope of resources your plugin can access.
-
-```go
-roots, err := ListRoots()
-if err == nil {
-    for _, root := range roots.Roots {
-        fmt.Printf("Root: %s at %s\n", *root.Name, root.URI)
-    }
-}
-```
-
-### Logging
-
-**`NotifyLoggingMessage(input LoggingMessageNotificationParam) error`**
-
-Send diagnostic, informational, warning, or error messages to the client. The client's logging level determines which messages are processed and displayed.
-
-```go
-NotifyLoggingMessage(LoggingMessageNotificationParam{
-    Level: LoggingLevelInfo,
-    Logger: ptrString("my_plugin"),
-    Data: json.RawMessage(`{"message": "Processing started"}`),
-})
-```
-
-### Progress Reporting
-
-**`NotifyProgress(input ProgressNotificationParam) error`**
-
-Report progress during long-running operations. Allows clients to display progress bars or status information to users.
-
-```go
-NotifyProgress(ProgressNotificationParam{
-    Progress: 50,
-    ProgressToken: "task-1",
-    Total: ptrFloat64(100),
-})
-```
-
-### List Change Notifications
-
-Notify the client when your plugin's available items change:
-
-**`NotifyToolListChanged() error`**
-- Call this when you add, remove, or modify available tools
-
-**`NotifyResourceListChanged() error`**
-- Call this when you add, remove, or modify available resources
-
-**`NotifyPromptListChanged() error`**
-- Call this when you add, remove, or modify available prompts
-
-**`NotifyResourceUpdated(input ResourceUpdatedNotificationParam) error`**
-- Call this when you modify the contents of a specific resource
-
-```go
-// When your plugin's tools change
-NotifyToolListChanged()
-
-// When a specific resource is updated
-NotifyResourceUpdated(ResourceUpdatedNotificationParam{
-    URI: "resource://my-resource",
-})
-```
-
-### Example: Interactive Tool with Progress
-
-```go
-func CallTool(input CallToolRequest) (*CallToolResult, error) {
-    switch input.Request.Name {
-    case "long_task":
-        // Log start
-        NotifyLoggingMessage(LoggingMessageNotificationParam{
-            Level: LoggingLevelInfo,
-            Data: json.RawMessage(`{"message": "Starting long task"}`),
-        })
-
-        // Do work with progress updates
-        for i := 0; i < 10; i++ {
-            // ... do work ...
-            NotifyProgress(ProgressNotificationParam{
-                Progress: float64((i + 1) * 10),
-                ProgressToken: "task-1",
-                Total: ptrFloat64(100),
-            })
-        }
-
-        return &CallToolResult{
-            Content: []json.RawMessage{
-                []byte(`{"type":"text","text":"Task completed"}`),
-            },
-        }, nil
-    default:
-        return &CallToolResult{
-            Content: []json.RawMessage{
-                []byte(fmt.Sprintf(`{"type":"text","text":"Unknown tool: %s"}`, input.Request.Name)),
-            },
-        }, nil
-    }
-}
-```
-
-## Building for Distribution
-
-### Using Docker
-
-The included `Dockerfile` simply encapsulates your WASM:
-
-```sh
-GOOS=wasip1 GOARCH=wasm tinygo build -no-debug -panic=trap -scheduler=none -o plugin.wasm
-docker build -t your-registry/your-plugin-name .
-```
-
-The Docker build:
-1. Compiles your Go code to `wasip1` target
-2. Creates a minimal image containing only the compiled `plugin.wasm`
-3. Outputs an OCI-compatible container image
-
-### Manual Build
-
-To build manually without Docker (requires TinyGo 0.40+):
-
-```sh
-# Build for WASM
-GOOS=wasip1 GOARCH=wasm tinygo build -no-debug -panic=trap -scheduler=none -o plugin.wasm
-
-# Result is at: plugin.wasm
-```
-
-## Implementation Guide
-
-### Creating a Tool
-
-Here's an example of implementing a simple tool:
-
-```go
-func ListTools(input ListToolsRequest) (*ListToolsResult, error) {
-    return &ListToolsResult{
-        Tools: []Tool{
-            {
-                Name: "greet",
-                Description: ptrString("Greet a person"),
-                InputSchema: ToolSchema{
-                    Type: "object",
-                    Properties: map[string]interface{}{
-                        "name": map[string]interface{}{
-                            "type": "string",
-                            "description": "The person's name",
-                        },
-                    },
-                    Required: []string{"name"},
-                },
-            },
-        },
-    }, nil
-}
-
-func CallTool(input CallToolRequest) (*CallToolResult, error) {
-    switch input.Request.Name {
-    case "greet":
-        name, ok := input.Request.Arguments["name"].(string)
-        if !ok {
-            return &CallToolResult{
-                Content: []json.RawMessage{
-                    []byte(`{"type":"text","text":"name argument required"}`),
-                },
-            }, nil
-        }
-        return &CallToolResult{
-            Content: []json.RawMessage{
-                []byte(fmt.Sprintf(`{"type":"text","text":"Hello, %s!"}`, name)),
-            },
-        }, nil
-    default:
-        return &CallToolResult{
-            Content: []json.RawMessage{
-                []byte(fmt.Sprintf(`{"type":"text","text":"Unknown tool: %s"}`, input.Request.Name)),
-            },
-        }, nil
-    }
-}
-```
-
-### Creating a Resource
-
-Example of implementing a resource:
-
-```go
-func ListResources(input ListResourcesRequest) (*ListResourcesResult, error) {
-    return &ListResourcesResult{
-        Resources: []Resource{
-            {
-                URI: "resource://example",
-                Name: "Example Resource",
-                Description: ptrString("An example resource"),
-                MimeType: ptrString("text/plain"),
-            },
-        },
-    }, nil
-}
-
-func ReadResource(input ReadResourceRequest) (*ReadResourceResult, error) {
-    switch input.Request.URI {
-    case "resource://example":
-        return &ReadResourceResult{
-            Contents: []json.RawMessage{
-                []byte(`{"uri":"resource://example","mimeType":"text/plain","text":"Resource content here"}`),
-            },
-        }, nil
-    default:
-        return &ReadResourceResult{
-            Contents: []json.RawMessage{
-                []byte(fmt.Sprintf(`{"type":"text","text":"Unknown resource: %s"}`, input.Request.URI)),
-            },
-        }, nil
-    }
-}
-```
-
-## Helper Functions
-
-The template includes some useful helper functions for working with pointers:
-
-```go
-// Helper to create string pointers
-func ptrString(s string) *string {
-    return &s
-}
-
-// Helper to create int64 pointers
-func ptrInt64(i int64) *int64 {
-    return &i
-}
-
-// Helper to create float64 pointers
-func ptrFloat64(f float64) *float64 {
-    return &f
-}
-
-// Helper to create bool pointers
-func ptrBool(b bool) *bool {
-    return &b
-}
-```
-
-## Configuration in hyper-mcp
-
-After building and publishing your plugin, configure it in hyper-mcp:
+Add to `~/.config/hyper-mcp/config.json`:
 
 ```json
 {
   "plugins": {
-    "my_plugin": {
-      "url": "oci://your-registry/your-plugin-name:latest"
+    "base64": {
+      "url": "oci://ghcr.io/duynhlab/base64-plugin:latest"
     }
   }
 }
 ```
 
-For local development/testing:
+Pin to a digest for reproducibility (recommended for production):
 
 ```json
 {
   "plugins": {
-    "my_plugin": {
-      "url": "file:///path/to/plugin.wasm"
+    "base64": {
+      "url": "oci://ghcr.io/duynhlab/base64-plugin@sha256:..."
     }
   }
 }
 ```
 
-## Testing
+The published image is signed with [cosign](https://github.com/sigstore/cosign) keyless via GitHub OIDC. Verify a digest with:
 
-To test your plugin locally:
+```sh
+cosign verify \
+  --certificate-identity-regexp "https://github.com/duynhlab/base64-plugin/.github/workflows/release-(docker|oras)\.yml@refs/tags/v.*" \
+  --certificate-oidc-issuer-regexp "https://token.actions.githubusercontent.com" \
+  ghcr.io/duynhlab/base64-plugin@sha256:...
+```
 
-1. Build it: `docker build -t my-plugin . && docker run --rm -v $(pwd):/workspace my-plugin cp /plugin.wasm /workspace/`
-2. Update hyper-mcp's config to point to `file://` URL
-3. Start hyper-mcp with `RUST_LOG=debug`
-4. Test through Claude Desktop, Cursor IDE, or another MCP client
+Once the plugin is loaded, hyper-mcp exposes the tools as `base64-base64_encode` and `base64-base64_decode` (plugin name is prefixed).
 
-## Resources
+## Build from source
 
-- [hyper-mcp Documentation](https://github.com/hyper-mcp-rs/hyper-mcp)
-- [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)
-- [Extism Go PDK](https://github.com/extism/go-pdk)
-- [WebAssembly Documentation](https://webassembly.org/)
-- [Example Plugins](https://github.com/search?q=topic%3Aplugins+org%3Ahyper-mcp-rs&type=repositories)
+Requires **TinyGo 0.40.1**. The build flags are fixed by the upstream hyper-mcp Go plugin template — do not change them.
+
+### Native TinyGo
+
+```sh
+GOOS=wasip1 GOARCH=wasm tinygo build -no-debug -panic=trap -scheduler=none -o plugin.wasm
+```
+
+### Via podman (no host TinyGo required)
+
+```sh
+podman run --rm --userns=keep-id -e GOFLAGS=-buildvcs=false -e HOME=/tmp \
+  -v "$PWD":/src:Z -w /src docker.io/tinygo/tinygo:0.40.1 \
+  tinygo build -target=wasip1 -no-debug -panic=trap -scheduler=none -o plugin.wasm
+```
+
+`--userns=keep-id` keeps the output file owned by your host user. `GOFLAGS=-buildvcs=false` skips Go's VCS stamping (the container does not have git context for the bind mount).
+
+The resulting `plugin.wasm` is ~425 KB.
+
+### OCI image
+
+The `Dockerfile` is a `FROM scratch` wrapper that copies `plugin.wasm` into the image — it does not compile anything. Build it after producing `plugin.wasm`:
+
+```sh
+podman build -t base64-plugin:latest .
+```
+
+## Test
+
+A host harness lives in `test/` (a separate Go module so it can use the native `extism/go-sdk` without conflicting with the wasip1 plugin build). It loads `plugin.wasm` and exercises both tools end-to-end:
+
+```sh
+cd test && go run .
+```
+
+Covers std + URL-safe alphabets, invalid base64, unknown tool, and missing-argument paths.
+
+## Release
+
+Releases are tag-driven. Push a SemVer tag prefixed with `v` and two parallel GitHub Actions workflows (`Release (Docker)` and `Release (ORAS)`) will:
+
+1. Build `plugin.wasm` with TinyGo 0.40.1.
+2. Push the image to `ghcr.io/duynhlab/base64-plugin:<tag>` and `:latest`.
+3. Sign both refs with cosign (keyless, GitHub OIDC).
+4. Create a GitHub Release with `plugin.wasm` attached.
+
+```sh
+git tag -a v0.3.0 -m "Release v0.3.0"
+git push origin v0.3.0
+```
+
+## Repository layout
+
+```
+main.go      Plugin handler implementations (the only file you normally edit).
+exports.go   Generated WASM //export wrappers. Do not edit.
+imports.go   Generated host-function bindings. Do not edit.
+types.go     MCP protocol types. Do not edit; reference only.
+test/        Standalone Go host harness (extism/go-sdk) for end-to-end tests.
+Dockerfile   FROM scratch wrapper around plugin.wasm.
+```
+
+See [AGENTS.md](./AGENTS.md) for build/test gotchas and project policies that apply to any contributor (human or AI).
 
 ## License
 
-Same as hyper-mcp - Apache 2.0
+Apache 2.0 — same as the upstream [hyper-mcp Go plugin template](https://github.com/hyper-mcp-rs/go-plugin-template) this repository was generated from.
