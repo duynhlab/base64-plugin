@@ -311,7 +311,7 @@ const (
 	CreateMessageRequestParamIncludeContextThisServer CreateMessageRequestParamIncludeContext = "thisServer"
 )
 
-func (e CreateMessageRequestParamIncludeContext) MarshallJSON() ([]byte, error) {
+func (e CreateMessageRequestParamIncludeContext) MarshalJSON() ([]byte, error) {
 	if !e.Valid() {
 		return nil, fmt.Errorf("invalid CreateMessageRequestParamIncludeContext: %q", e)
 	}
@@ -532,7 +532,7 @@ const (
 	ElicitationResultActionDecline ElicitationResultAction = "decline"
 )
 
-func (e ElicitationResultAction) MarshallJSON() ([]byte, error) {
+func (e ElicitationResultAction) MarshalJSON() ([]byte, error) {
 	if !e.Valid() {
 		return nil, fmt.Errorf("invalid ElicitationResultAction: %q", e)
 	}
@@ -657,7 +657,7 @@ type EnumSchema struct {
 	Title       *string  `json:"title,omitempty"`
 }
 
-func (e EnumSchema) MarshallJSON() ([]byte, error) {
+func (e EnumSchema) MarshalJSON() ([]byte, error) {
 	type alias EnumSchema
 
 	return json.Marshal(&struct {
@@ -714,7 +714,7 @@ type ImageContent struct {
 	MimeType    string       `json:"mimeType"`
 }
 
-func (i ImageContent) MarshallJSON() ([]byte, error) {
+func (i ImageContent) MarshalJSON() ([]byte, error) {
 	type alias ImageContent
 
 	return json.Marshal(&struct {
@@ -809,7 +809,7 @@ const (
 	LoggingLevelEmergency LoggingLevel = "emergency"
 )
 
-func (l LoggingLevel) MarshallJSON() ([]byte, error) {
+func (l LoggingLevel) MarshalJSON() ([]byte, error) {
 	if !l.Valid() {
 		return nil, fmt.Errorf("invalid LoggingLevel: %q", l)
 	}
@@ -880,7 +880,7 @@ const (
 	NumberTypeInteger NumberType = "integer"
 )
 
-func (n NumberType) MarshallJSON() ([]byte, error) {
+func (n NumberType) MarshalJSON() ([]byte, error) {
 	if !n.Valid() {
 		return nil, fmt.Errorf("invalid NumberType: %q", n)
 	}
@@ -1255,7 +1255,7 @@ type ResourceLinkContent struct {
 	URI         string       `json:"uri"`
 }
 
-func (r ResourceLinkContent) MarshallJSON() ([]byte, error) {
+func (r ResourceLinkContent) MarshalJSON() ([]byte, error) {
 	type alias ResourceLinkContent
 	return json.Marshal(&struct {
 		Type string `json:"type"`
@@ -1300,7 +1300,7 @@ type ResourceTemplateReference struct {
 	URI string `json:"uri"`
 }
 
-func (r ResourceTemplateReference) MarshallJSON() ([]byte, error) {
+func (r ResourceTemplateReference) MarshalJSON() ([]byte, error) {
 	type alias ResourceTemplateReference
 	return json.Marshal(&struct {
 		Type string `json:"type"`
@@ -1343,7 +1343,7 @@ const (
 	RoleUser      Role = "user"
 )
 
-func (r Role) MarshallJSON() ([]byte, error) {
+func (r Role) MarshalJSON() ([]byte, error) {
 	if !r.Valid() {
 		return nil, fmt.Errorf("invalid Role: %q", r)
 	}
@@ -1439,7 +1439,7 @@ type Schema struct {
 	Required   []string                             `json:"required,omitempty"`
 }
 
-func (s Schema) MarshallJSON() ([]byte, error) {
+func (s Schema) MarshalJSON() ([]byte, error) {
 	type alias Schema
 	return json.Marshal(&struct {
 		Type string `json:"type"`
@@ -1479,7 +1479,7 @@ type StringSchema struct {
 	Title       *string             `json:"title,omitempty"`
 }
 
-func (s StringSchema) MarshallJSON() ([]byte, error) {
+func (s StringSchema) MarshalJSON() ([]byte, error) {
 	type alias StringSchema
 	return json.Marshal(&struct {
 		Type string `json:"type"`
@@ -1520,7 +1520,7 @@ const (
 	DateTime StringSchemaFormat = "date_time"
 )
 
-func (s StringSchemaFormat) MarshallJSON() ([]byte, error) {
+func (s StringSchemaFormat) MarshalJSON() ([]byte, error) {
 	if !s.Valid() {
 		return nil, fmt.Errorf("invalid StringSchemaFormat: %q", s)
 	}
@@ -1564,7 +1564,7 @@ type TextContent struct {
 	Text        string       `json:"text"`
 }
 
-func (t TextContent) MarshallJSON() ([]byte, error) {
+func (t TextContent) MarshalJSON() ([]byte, error) {
 	type alias TextContent
 	return json.Marshal(&struct {
 		Type string `json:"type"`
@@ -1632,14 +1632,14 @@ const (
 	ToolChoiceModeNone     ToolChoiceMode = "none"
 )
 
-func (t ToolChoiceMode) MarshallJSON() ([]byte, error) {
+func (t ToolChoiceMode) MarshalJSON() ([]byte, error) {
 	if !t.Valid() {
 		return nil, fmt.Errorf("invalid ToolChoiceMode: %q", t)
 	}
 	return json.Marshal(string(t))
 }
 
-func (t *ToolChoiceMode) UnmarshallJSON(data []byte) error {
+func (t *ToolChoiceMode) UnmarshalJSON(data []byte) error {
 	var str string
 	if err := json.Unmarshal(data, &str); err != nil {
 		return err
